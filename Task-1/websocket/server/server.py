@@ -5,8 +5,12 @@
 #
 import asyncio
 import os
+import sys
 from contextlib import asynccontextmanager
 from typing import Any, Dict
+
+# Add the server directory to the path
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import uvicorn
 from dotenv import load_dotenv
