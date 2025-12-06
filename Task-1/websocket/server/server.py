@@ -8,6 +8,7 @@ import os
 import sys
 from contextlib import asynccontextmanager
 from typing import Any, Dict
+from pathlib import Path
 
 # Add the server directory to the path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -17,8 +18,9 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, Request, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 
-# Load environment variables
-load_dotenv(override=True)
+# Load environment variables from .env file in the server directory
+env_file = Path(__file__).parent / ".env"
+load_dotenv(env_file, override=True)
 
 from bot_fast_api import run_bot
 from bot_websocket_server import run_bot_websocket_server

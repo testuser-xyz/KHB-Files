@@ -23,7 +23,13 @@ from pipecat.transports.websocket.fastapi import (
     FastAPIWebsocketTransport,
 )
 
+# Ensure environment variables are loaded from .env file
 load_dotenv(override=True)
+
+# Verify API key is available
+api_key = os.getenv("GOOGLE_API_KEY")
+if not api_key:
+    logger.warning("GOOGLE_API_KEY not found in environment variables")
 
 logger.remove(0)
 logger.add(sys.stderr, level="DEBUG")
@@ -41,6 +47,11 @@ Respond to what the user said in a creative and helpful way. Keep your responses
 
 
 async def run_bot(websocket_client):
+    # Get API key from environment
+    api_key = os.getenv("GOOGLE_API_KEY")
+    if not api_key:
+        raise ValueError("GOOGLE_API_KEY environment variable is not set. Please check your .env file.")
+    
     ws_transport = FastAPIWebsocketTransport(
         websocket=websocket_client,
         params=FastAPIWebsocketParams(
@@ -53,7 +64,7 @@ async def run_bot(websocket_client):
     )
 
     llm = GeminiLiveLLMService(
-        api_key=os.getenv("GOOGLE_API_KEY"),
+        api_key=api_key,
         voice_id="Puck",  # Aoede, Charon, Fenrir, Kore, Puck
         transcribe_model_audio=True,
         system_instruction=SYSTEM_INSTRUCTION,
