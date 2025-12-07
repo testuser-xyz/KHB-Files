@@ -10,6 +10,8 @@ __pycache__/
 venv/
 ENV/
 env/
+.ENV
+.env
 
 #node_modules
 node_modules/
