@@ -71,8 +71,10 @@ async def run_bot(websocket_client):
     logger.info("🎤 Initializing Soniox STT...")
     stt = SonioxSTTService(
         api_key=soniox_key,
-        model="stt-rt-preview",
+        model="stt-rt-v3",  # Updated to v3 model (default)
         sample_rate=16000,
+        audio_format="pcm_s16le",  # PCM 16-bit little-endian (Pipecat standard)
+        channels=1,  # Mono audio
     )
     logger.info("✅ Soniox STT initialized")
 

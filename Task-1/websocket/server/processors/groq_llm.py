@@ -54,13 +54,10 @@ class GroqLLMService(AIService):
 
     async def process_frame(self, frame: Frame, direction: FrameDirection):
         """Process incoming frames and generate LLM responses."""
-        frame_type = type(frame).__name__
-        
-        # Log ALL frames at INFO level to see what's reaching the service
+        # Only log frames relevant to LLM processing (skip audio frames to reduce log spam)
         if isinstance(frame, (TranscriptionFrame, LLMRunFrame, LLMMessagesFrame, LLMContextFrame, TextFrame)):
+            frame_type = type(frame).__name__
             logger.info(f"🤖 [GROQ LLM] 📥 Received {frame_type}")
-        else:
-            logger.debug(f"🤖 [GROQ LLM] 🔍 Frame received: {frame_type}")
         
         await super().process_frame(frame, direction)
         
