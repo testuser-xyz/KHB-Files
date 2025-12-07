@@ -3,7 +3,6 @@ Simple Rule-Based LLM Replacement
 No API calls - just pattern matching for responses
 """
 import re
-from typing import AsyncGenerator
 from loguru import logger
 from pipecat.frames.frames import (
     Frame,
@@ -11,6 +10,7 @@ from pipecat.frames.frames import (
     LLMFullResponseEndFrame,
     LLMFullResponseStartFrame,
 )
+from pipecat.processors.frame_processor import FrameDirection
 from pipecat.services.ai_service import AIService
 
 
@@ -122,8 +122,9 @@ class SimpleResponseService(AIService):
         logger.info(f"💬 [SimpleResponse] No pattern match - using default")
         return response
 
-    async def process_frame(self, frame: Frame, direction) -> AsyncGenerator[Frame, None]:
+    async def process_frame(self, frame: Frame, direction: FrameDirection):
         """Process incoming frames and generate responses."""
+        await super().process_frame(frame, direction)
         
         # Look for text frames (from STT)
         if isinstance(frame, TextFrame):
@@ -135,9 +136,9 @@ class SimpleResponseService(AIService):
             logger.info(f"💬 [SimpleResponse] Responding: '{response_text}'")
             
             # Emit response frames (same format as LLM)
-            yield LLMFullResponseStartFrame()
-            yield TextFrame(text=response_text)
-            yield LLMFullResponseEndFrame()
+            await self.push_frame(LLMFullResponseStartFrame(), direction)
+            await self.push_frame(TextFrame(text=response_text), direction)
+            await self.push_frame(LLMFullResponseEndFrame(), direction)
         else:
             # Pass through other frames
-            yield frame
+            await self.push_frame(frame, direction)

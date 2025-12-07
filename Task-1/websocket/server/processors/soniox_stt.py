@@ -117,7 +117,6 @@ class SonioxSTTService(AIService):
         """Receive transcription results from Soniox."""
         try:
             while self._websocket:
-<<<<<<< HEAD
                 try:
                     message = await self._websocket.recv()
                     data = json.loads(message)
@@ -166,32 +165,6 @@ class SonioxSTTService(AIService):
                     break
                 except json.JSONDecodeError as e:
                     logger.warning(f"🎤 [SONIOX STT] Failed to parse JSON: {e}")
-=======
-                message = await self._websocket.recv()
-                data = json.loads(message)
-                
-                # Check for errors
-                if "error_code" in data:
-                    logger.error(f"Soniox STT error: {data.get('error_message')}")
-                    await self.push_error(f"Soniox error: {data.get('error_message')}")
->>>>>>> parent of 0294cac (Fixes)
-                    continue
-                
-                # Check for finished signal
-                if data.get("finished"):
-                    logger.debug("Soniox stream finished")
-                    continue
-                
-                # Process tokens
-                tokens = data.get("tokens", [])
-                if tokens:
-                    # Get final tokens only
-                    final_tokens = [t for t in tokens if t.get("is_final")]
-                    if final_tokens:
-                        text = " ".join(t.get("text", "") for t in final_tokens)
-                        if text.strip():
-                            logger.success(f"🎤 [SONIOX STT] ✨ Transcribed: '{text}'")
-                            await self.push_frame(TranscriptionFrame(text=text, user_id="", timestamp=""))
                         
         except asyncio.CancelledError:
             pass
@@ -214,7 +187,6 @@ class SonioxSTTService(AIService):
         elif isinstance(frame, UserStoppedSpeakingFrame):
             self._is_speaking = False
             logger.info(f"🎤 [SONIOX STT] 🤐 User stopped speaking - processing...")
-<<<<<<< HEAD
             # Send empty frame to signal end of audio stream to Soniox
             if self._websocket:
                 try:
@@ -246,8 +218,6 @@ class SonioxSTTService(AIService):
             else:
                 logger.warning("🎤 [SONIOX STT] ⚠️ No transcription available to send")
             
-=======
->>>>>>> parent of 0294cac (Fixes)
             await self.push_frame(frame, direction)
             
         elif isinstance(frame, AudioRawFrame):

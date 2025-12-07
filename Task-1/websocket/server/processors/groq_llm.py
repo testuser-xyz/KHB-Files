@@ -112,8 +112,8 @@ class GroqLLMService(AIService):
         elif isinstance(frame, LLMRunFrame):
             logger.info("🤖 [GROQ LLM] ✅ Received LLMRunFrame")
             self._last_llm_run_frame = frame
-            # Pass through - aggregator should emit LLMMessagesFrame
-            # If it doesn't, we'll handle it via LLMContextFrame or direct processing
+            # Pass through - aggregator should emit LLMMessagesFrame or LLMContextFrame
+            # We'll process messages when LLMContextFrame arrives
             await self.push_frame(frame, direction)
         
         # Handle LLMContextFrame - extract messages and process
@@ -159,22 +159,26 @@ class GroqLLMService(AIService):
                 
                 # If we have messages, check if there's a new user message to process
                 if messages and isinstance(messages, list) and len(messages) > 0:
-                    # Check if context has grown (new message added)
-                    if len(messages) > self._last_context_message_count:
-                        last_msg = messages[-1] if isinstance(messages[-1], dict) else {}
-                        last_role = last_msg.get('role', '') if isinstance(last_msg, dict) else ''
-                        last_content = last_msg.get('content', '') if isinstance(last_msg, dict) else ''
-                        
-                        # Process if last message is from user and it's new
-                        if last_role == 'user' and last_content and last_content != self._last_processed_content:
-                            logger.info(f"🤖 [GROQ LLM] ✨ Processing new user message: '{last_content[:80]}...'")
+                    # Check if context has grown (new message added) OR if we haven't processed anything yet
+                    context_grown = len(messages) > self._last_context_message_count
+                    last_msg = messages[-1] if isinstance(messages[-1], dict) else {}
+                    last_role = last_msg.get('role', '') if isinstance(last_msg, dict) else ''
+                    last_content = last_msg.get('content', '') if isinstance(last_msg, dict) else ''
+                    
+                    # Process if last message is from user and it's new (not already processed)
+                    # This ensures we respond to user messages even if context detection is imperfect
+                    if last_role == 'user' and last_content and last_content != self._last_processed_content:
+                        # Additional check: only process if context grew OR we received LLMRunFrame
+                        if context_grown or self._last_llm_run_frame:
+                            logger.info(f"🤖 [GROQ LLM] ✨ Processing user message: '{last_content[:80]}...'")
                             await self._process_messages(messages, direction)
                             self._last_processed_content = last_content
                             self._last_context_message_count = len(messages)
+                            self._last_llm_run_frame = None  # Clear the flag
                         else:
-                            logger.debug(f"🤖 [GROQ LLM] No new user message to process (role: {last_role}, already processed: {last_content == self._last_processed_content})")
+                            logger.debug(f"🤖 [GROQ LLM] Waiting for context growth or LLMRunFrame (context_grown={context_grown}, has_llm_run={self._last_llm_run_frame is not None})")
                     else:
-                        logger.debug(f"🤖 [GROQ LLM] Context size unchanged ({len(messages)} <= {self._last_context_message_count}), skipping")
+                        logger.debug(f"🤖 [GROQ LLM] Skipping: role={last_role}, already_processed={last_content == self._last_processed_content}")
                 elif not messages:
                     logger.warning(f"🤖 [GROQ LLM] ⚠️ Could not extract messages from LLMContextFrame")
                     # Fallback: If we have a pending transcription, use it directly
@@ -225,8 +229,8 @@ class GroqLLMService(AIService):
             
             logger.info(f"🤖 [GROQ LLM] Calling Groq API with {len(groq_messages)} messages...")
             logger.debug(f"🤖 [GROQ LLM] Messages: {groq_messages}")
-                
-                # Call Groq API asynchronously to avoid blocking
+            
+            # Call Groq API asynchronously to avoid blocking
             def _call_groq_api():
                 return self._client.chat.completions.create(
                     model=self._model,
@@ -241,7 +245,7 @@ class GroqLLMService(AIService):
             # Extract response text
             response_text = response.choices[0].message.content
             logger.success(f"🤖 [GROQ LLM] ✨ Response: '{response_text[:100]}...'")
-                
+            
             # Update conversation history for context
             # Extract user and assistant messages from the input
             for msg in messages:
