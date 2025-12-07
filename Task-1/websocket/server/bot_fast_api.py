@@ -22,8 +22,8 @@ from pipecat.transports.websocket.fastapi import (
     FastAPIWebsocketTransport,
 )
 
-# Import Soniox STT, Cartesia TTS, and Groq LLM
-from processors import SonioxSTTService, CartesiaTTSService, GroqLLMService
+# Import ONLY Soniox STT, Cartesia TTS, and Simple Response (NO GEMINI, NO OPENAI)
+from processors import SonioxSTTService, CartesiaTTSService, SimpleResponseService
 
 # Ensure environment variables are loaded from .env file
 load_dotenv(override=True)
@@ -32,27 +32,25 @@ logger.remove(0)
 logger.add(sys.stderr, level="DEBUG")
 
 
-# NOTE: This bot uses Soniox STT + Groq LLM + Cartesia TTS
-# Speech flow: User speaks → Soniox → Groq LLM → Cartesia → User hears
+# NOTE: This bot uses ONLY Soniox STT + Cartesia TTS
+# No Gemini, no OpenAI - just simple rule-based responses
+# Speech flow: User speaks → Soniox → SimpleResponse → Cartesia → User hears
 
 
 async def run_bot(websocket_client):
-    logger.info("🚀 Starting bot initialization (Soniox + Groq LLM + Cartesia)...")
+    logger.info("🚀 Starting bot initialization (Soniox + Cartesia ONLY)...")
     
-    # Verify API keys - Soniox, Groq, and Cartesia needed!
+    # Verify API keys - ONLY Soniox and Cartesia needed!
     soniox_key = os.getenv("SONIOX_API_KEY")
-    groq_key = os.getenv("GROQ_API_KEY")
     cartesia_key = os.getenv("CARTESIA_API_KEY")
     
     if not soniox_key:
         raise ValueError("❌ SONIOX_API_KEY not set!")
-    if not groq_key:
-        raise ValueError("❌ GROQ_API_KEY not set! Get a free API key from https://console.groq.com/")
     if not cartesia_key:
         raise ValueError("❌ CARTESIA_API_KEY not set!")
     
-    logger.info("✅ API keys verified (Soniox + Groq + Cartesia)")
-    logger.info("ℹ️  Using Groq LLM for intelligent responses (free tier available)")
+    logger.info("✅ API keys verified (Soniox + Cartesia)")
+    logger.info("ℹ️  NO LLM API calls - using simple rule-based responses")
     
     ws_transport = FastAPIWebsocketTransport(
         websocket=websocket_client,
@@ -75,13 +73,11 @@ async def run_bot(websocket_client):
     )
     logger.info("✅ Soniox STT initialized")
 
-    # === Groq LLM (Intelligent Responses) ===
-    logger.info("🤖 Initializing Groq LLM...")
-    llm = GroqLLMService(
-        api_key=groq_key,
-        model="llama-3.1-8b-instant",  # Fast and free model
-    )
-    logger.info("✅ Groq LLM initialized")
+    # === Simple Response System (NO API CALLS) ===
+    # This replaces LLM with simple pattern matching - NO Gemini, NO OpenAI!
+    logger.info("💬 Initializing Simple Response System (rule-based, no API)...")
+    response_system = SimpleResponseService()
+    logger.info("✅ Simple Response System initialized")
 
     # === Cartesia TTS (Text to Speech) ===
     logger.info("🔊 Initializing Cartesia TTS...")
@@ -93,8 +89,15 @@ async def run_bot(websocket_client):
     )
     logger.info("✅ Cartesia TTS initialized")
 
-    # FLOW: Soniox (STT) → Groq LLM (intelligent responses) → Cartesia (TTS)
-    # Groq offers free tier with generous limits for testing
+    # === ALL GEMINI CODE REMOVED ===
+    # Original Gemini Live used: GeminiLiveLLMService for STT+LLM+TTS all-in-one
+    # We removed it completely!
+    # 
+    # === ALL OPENAI CODE REMOVED ===
+    # We also removed OpenAI LLM to avoid any API costs
+    # 
+    # NEW FLOW: Soniox (STT) → SimpleResponse (rule-based) → Cartesia (TTS)
+    # NO API CALLS for text generation - just pattern matching!
 
     context = LLMContext(
         [
@@ -109,21 +112,21 @@ async def run_bot(websocket_client):
     # RTVI events for Pipecat client UI
     rtvi = RTVIProcessor(config=RTVIConfig(config=[]))
 
-    logger.info("🔧 Building pipeline: WebSocket → Soniox STT → Groq LLM → Cartesia TTS → WebSocket")
-    logger.info("ℹ️  Pipeline uses Groq LLM for intelligent responses")
+    logger.info("🔧 Building pipeline: WebSocket → Soniox STT → SimpleResponse → Cartesia TTS → WebSocket")
+    logger.info("ℹ️  Pipeline uses ZERO external LLM APIs (no Gemini, no OpenAI)")
     pipeline = Pipeline(
         [
             ws_transport.input(),       # WebSocket audio input
             stt,                        # Soniox STT: audio -> text
             context_aggregator.user(),  # Add user text to context
             rtvi,                       # RTVI events
-            llm,                        # Groq LLM: text -> intelligent response text
+            response_system,            # SimpleResponse: text -> response text (NO API!)
             tts,                        # Cartesia TTS: text -> audio
             context_aggregator.assistant(),  # Add assistant response to context
             ws_transport.output(),      # WebSocket audio output
         ]
     )
-    logger.info("✅ Pipeline built successfully (Soniox + Groq + Cartesia)")
+    logger.info("✅ Pipeline built successfully (100% Soniox + Cartesia)")
 
     task = PipelineTask(
         pipeline,

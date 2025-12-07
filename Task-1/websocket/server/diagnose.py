@@ -16,7 +16,7 @@ env_file = server_dir / ".env"
 load_dotenv(env_file, override=True)
 
 print("=" * 60)
-print("🔍 DIAGNOSTIC CHECK - Soniox + OpenAI + Cartesia Setup")
+print("🔍 DIAGNOSTIC CHECK - Soniox + Groq + Cartesia Setup")
 print("=" * 60)
 print()
 
@@ -32,22 +32,19 @@ else:
 print("\n🔑 Step 2: Checking API keys...")
 issues = []
 
-openai_key = os.getenv("OPENAI_API_KEY")
-if not openai_key:
-    print("   ❌ OPENAI_API_KEY: NOT SET")
-    issues.append("Add OPENAI_API_KEY to .env file")
-elif openai_key == "your_openai_key_here":
-    print("   ⚠️  OPENAI_API_KEY: PLACEHOLDER (replace with real key)")
-    issues.append("Replace 'your_openai_key_here' with actual OpenAI API key")
-else:
-    print(f"   ✅ OPENAI_API_KEY: Set ({openai_key[:8]}...{openai_key[-4:]})")
-
 soniox_key = os.getenv("SONIOX_API_KEY")
 if not soniox_key:
     print("   ❌ SONIOX_API_KEY: NOT SET")
     issues.append("Add SONIOX_API_KEY to .env file")
 else:
     print(f"   ✅ SONIOX_API_KEY: Set ({soniox_key[:8]}...{soniox_key[-4:]})")
+
+groq_key = os.getenv("GROQ_API_KEY")
+if not groq_key:
+    print("   ❌ GROQ_API_KEY: NOT SET")
+    issues.append("Add GROQ_API_KEY to .env file")
+else:
+    print(f"   ✅ GROQ_API_KEY: Set ({groq_key[:8]}...{groq_key[-4:]})")
 
 cartesia_key = os.getenv("CARTESIA_API_KEY")
 if not cartesia_key:
@@ -62,7 +59,7 @@ required_packages = [
     ("pipecat", "pipecat-ai"),
     ("cartesia", "cartesia"),
     ("websockets", "websockets"),
-    ("openai", "openai"),
+    ("groq", "groq"),
 ]
 
 missing_packages = []
