@@ -109,35 +109,54 @@ class SonioxSTTService(AIService):
         """Receive transcription results from Soniox."""
         try:
             while self._websocket:
-                message = await self._websocket.recv()
-                data = json.loads(message)
-                
-                # Check for errors
-                if "error_code" in data:
-                    logger.error(f"Soniox STT error: {data.get('error_message')}")
-                    await self.push_error(f"Soniox error: {data.get('error_message')}")
+                try:
+                    message = await self._websocket.recv()
+                    data = json.loads(message)
+                    
+                    # Check for errors
+                    if "error_code" in data:
+                        logger.error(f"🎤 [SONIOX STT] Error: {data.get('error_message')}")
+                        await self.push_error(f"Soniox error: {data.get('error_message')}")
+                        continue
+                    
+                    # Check for finished signal
+                    if data.get("finished"):
+                        logger.debug("🎤 [SONIOX STT] Stream finished")
+                        continue
+                    
+                    # Process tokens
+                    tokens = data.get("tokens", [])
+                    if tokens:
+                        logger.debug(f"🎤 [SONIOX STT] Received {len(tokens)} tokens")
+                        # Get final tokens only
+                        final_tokens = [t for t in tokens if t.get("is_final")]
+                        if final_tokens:
+                            text = " ".join(t.get("text", "") for t in final_tokens)
+                            if text.strip():
+                                logger.success(f"🎤 [SONIOX STT] ✨ Transcribed: '{text}'")
+                                # Send TranscriptionFrame for LLM context aggregator
+                                await self.push_frame(TranscriptionFrame(text=text, user_id="", timestamp=""))
+                        else:
+                            # Log partial tokens for debugging
+                            partial_text = " ".join(t.get("text", "") for t in tokens if t.get("text"))
+                            if partial_text.strip():
+                                logger.debug(f"🎤 [SONIOX STT] Partial transcription: '{partial_text}'")
+                except websockets.exceptions.ConnectionClosed:
+                    logger.info("🎤 [SONIOX STT] WebSocket connection closed by server")
+                    break
+                except json.JSONDecodeError as e:
+                    logger.warning(f"🎤 [SONIOX STT] Failed to parse JSON: {e}")
                     continue
-                
-                # Check for finished signal
-                if data.get("finished"):
-                    logger.debug("Soniox stream finished")
-                    continue
-                
-                # Process tokens
-                tokens = data.get("tokens", [])
-                if tokens:
-                    # Get final tokens only
-                    final_tokens = [t for t in tokens if t.get("is_final")]
-                    if final_tokens:
-                        text = " ".join(t.get("text", "") for t in final_tokens)
-                        if text.strip():
-                            logger.success(f"🎤 [SONIOX STT] ✨ Transcribed: '{text}'")
-                            await self.push_frame(TranscriptionFrame(text=text, user_id="", timestamp=""))
                         
         except asyncio.CancelledError:
-            pass
+            logger.debug("🎤 [SONIOX STT] Receive loop cancelled")
         except Exception as e:
-            logger.error(f"{self} Error in receive loop: {e}")
+            logger.error(f"🎤 [SONIOX STT] Error in receive loop: {e}")
+            import traceback
+            logger.error(f"🎤 [SONIOX STT] Traceback: {traceback.format_exc()}")
+        finally:
+            if self._websocket:
+                self._websocket = None
 
     async def process_frame(self, frame: Frame, direction: FrameDirection):
         """Process incoming frames."""
@@ -151,6 +170,13 @@ class SonioxSTTService(AIService):
         elif isinstance(frame, UserStoppedSpeakingFrame):
             self._is_speaking = False
             logger.info(f"🎤 [SONIOX STT] 🤐 User stopped speaking - processing...")
+            # Send empty frame to signal end of audio stream to Soniox
+            if self._websocket:
+                try:
+                    await self._websocket.send(b"")
+                    logger.debug("🎤 [SONIOX STT] Sent end-of-stream signal to Soniox")
+                except Exception as e:
+                    logger.debug(f"🎤 [SONIOX STT] Could not send end-of-stream: {e}")
             await self.push_frame(frame, direction)
             
         elif isinstance(frame, AudioRawFrame):
@@ -165,8 +191,15 @@ class SonioxSTTService(AIService):
                     self._audio_frame_count += 1
                     if self._audio_frame_count % 50 == 0:
                         logger.debug(f"🎤 [SONIOX STT] Streaming audio... ({self._audio_frame_count} frames sent)")
+                except websockets.exceptions.ConnectionClosed:
+                    logger.debug("🎤 [SONIOX STT] WebSocket connection closed during send")
+                    self._websocket = None
                 except Exception as e:
-                    logger.error(f"❌ [SONIOX STT] Error sending audio: {e}")
+                    # Only log if it's not a connection closed error
+                    error_str = str(e).lower()
+                    if "1000" not in str(e) and "closed" not in error_str and "connection" not in error_str:
+                        logger.error(f"❌ [SONIOX STT] Error sending audio: {e}")
+                    self._websocket = None
             
             # Always push audio downstream
             await self.push_frame(frame, direction)
