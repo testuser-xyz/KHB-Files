@@ -16,24 +16,34 @@ from pipecat.processors.aggregators.llm_context import LLMContext
 from pipecat.processors.aggregators.llm_response_universal import LLMContextAggregatorPair
 from pipecat.processors.frameworks.rtvi import RTVIConfig, RTVIObserver, RTVIProcessor
 from pipecat.serializers.protobuf import ProtobufFrameSerializer
-from pipecat.services.google.gemini_live.llm import GeminiLiveLLMService
 from pipecat.transports.websocket.server import (
     WebsocketServerParams,
     WebsocketServerTransport,
 )
 
-SYSTEM_INSTRUCTION = f"""
-"You are Gemini Chatbot, a friendly, helpful robot.
+# Import ONLY Soniox STT, Cartesia TTS, and Simple Response (NO GEMINI, NO OPENAI)
+from processors import SonioxSTTService, CartesiaTTSService, SimpleResponseService
 
-Your goal is to demonstrate your capabilities in a succinct way.
-
-Your output will be converted to audio so don't include special characters in your answers.
-
-Respond to what the user said in a creative and helpful way. Keep your responses brief. One or two sentences at most.
-"""
+# NOTE: This bot uses ONLY Soniox STT + Cartesia TTS
+# No Gemini, no OpenAI - just simple rule-based responses
+# Speech flow: User speaks → Soniox → SimpleResponse → Cartesia → User hears
 
 
 async def run_bot_websocket_server():
+    logger.info("🚀 Starting bot initialization (WebSocket Server mode - Soniox + Cartesia ONLY)...")
+    
+    # Verify API keys - ONLY Soniox and Cartesia needed!
+    soniox_key = os.getenv("SONIOX_API_KEY")
+    cartesia_key = os.getenv("CARTESIA_API_KEY")
+    
+    if not soniox_key:
+        raise ValueError("❌ SONIOX_API_KEY not set!")
+    if not cartesia_key:
+        raise ValueError("❌ CARTESIA_API_KEY not set!")
+    
+    logger.info("✅ API keys verified (Soniox + Cartesia)")
+    logger.info("ℹ️  NO LLM API calls - using simple rule-based responses")
+    
     ws_transport = WebsocketServerTransport(
         params=WebsocketServerParams(
             serializer=ProtobufFrameSerializer(),
@@ -44,13 +54,42 @@ async def run_bot_websocket_server():
             session_timeout=60 * 3,  # 3 minutes
         )
     )
+    logger.info("✅ WebSocket transport initialized")
 
-    llm = GeminiLiveLLMService(
-        api_key=os.getenv("GOOGLE_API_KEY"),
-        voice_id="Puck",  # Aoede, Charon, Fenrir, Kore, Puck
-        transcribe_model_audio=True,
-        system_instruction=SYSTEM_INSTRUCTION,
+    # === Soniox STT (Speech to Text) ===
+    logger.info("🎤 Initializing Soniox STT...")
+    stt = SonioxSTTService(
+        api_key=soniox_key,
+        model="stt-rt-preview",
+        sample_rate=16000,
     )
+    logger.info("✅ Soniox STT initialized")
+
+    # === Simple Response System (NO API CALLS) ===
+    # This replaces LLM with simple pattern matching - NO Gemini, NO OpenAI!
+    logger.info("💬 Initializing Simple Response System (rule-based, no API)...")
+    response_system = SimpleResponseService()
+    logger.info("✅ Simple Response System initialized")
+
+    # === Cartesia TTS (Text to Speech) ===
+    logger.info("🔊 Initializing Cartesia TTS...")
+    tts = CartesiaTTSService(
+        api_key=cartesia_key,
+        voice_id="694f9389-aac1-45b6-b726-9d9369183238",  # Sonic voice
+        model_id="sonic-3",
+        sample_rate=16000,
+    )
+    logger.info("✅ Cartesia TTS initialized")
+
+    # === ALL GEMINI CODE REMOVED ===
+    # Original Gemini Live used: GeminiLiveLLMService for STT+LLM+TTS all-in-one
+    # We removed it completely!
+    # 
+    # === ALL OPENAI CODE REMOVED ===
+    # We also removed OpenAI LLM to avoid any API costs
+    # 
+    # NEW FLOW: Soniox (STT) → SimpleResponse (rule-based) → Cartesia (TTS)
+    # NO API CALLS for text generation - just pattern matching!
 
     context = LLMContext(
         [
@@ -65,16 +104,21 @@ async def run_bot_websocket_server():
     # RTVI events for Pipecat client UI
     rtvi = RTVIProcessor(config=RTVIConfig(config=[]))
 
+    logger.info("🔧 Building pipeline: WebSocket → Soniox STT → SimpleResponse → Cartesia TTS → WebSocket")
+    logger.info("ℹ️  Pipeline uses ZERO external LLM APIs (no Gemini, no OpenAI)")
     pipeline = Pipeline(
         [
-            ws_transport.input(),
-            context_aggregator.user(),
-            rtvi,
-            llm,  # LLM
-            ws_transport.output(),
-            context_aggregator.assistant(),
+            ws_transport.input(),       # WebSocket audio input
+            stt,                        # Soniox STT: audio -> text
+            context_aggregator.user(),  # Add user text to context
+            rtvi,                       # RTVI events
+            response_system,            # SimpleResponse: text -> response text (NO API!)
+            tts,                        # Cartesia TTS: text -> audio
+            context_aggregator.assistant(),  # Add assistant response to context
+            ws_transport.output(),      # WebSocket audio output
         ]
     )
+    logger.info("✅ Pipeline built successfully (100% Soniox + Cartesia)")
 
     task = PipelineTask(
         pipeline,
