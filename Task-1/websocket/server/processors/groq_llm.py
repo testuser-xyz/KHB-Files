@@ -3,6 +3,7 @@
 # Uses Groq's free API for fast LLM responses
 #
 import asyncio
+import hashlib
 import os
 from loguru import logger
 from dotenv import load_dotenv
@@ -47,7 +48,7 @@ class GroqLLMService(AIService):
         self._pending_transcription = None  # Store transcription until LLMRunFrame arrives
         self._conversation_history = []  # Store conversation history
         self._last_llm_run_frame = None  # Track when LLMRunFrame was received
-        self._last_processed_content = ""  # Track last processed message to avoid duplicates
+        self._processed_message_hashes = set()  # Track processed message content hashes to avoid duplicates
         self._last_context_message_count = 0  # Track context size to detect new messages
         logger.info(f"🤖 [GROQ LLM] Initialized with model: {self._model}")
     
@@ -162,20 +163,29 @@ class GroqLLMService(AIService):
                     last_role = last_msg.get('role', '') if isinstance(last_msg, dict) else ''
                     last_content = last_msg.get('content', '') if isinstance(last_msg, dict) else ''
                     
-                    # Process if last message is from user and it's new (not already processed)
-                    # This ensures we respond to user messages even if context detection is imperfect
-                    if last_role == 'user' and last_content and last_content != self._last_processed_content:
-                        # Additional check: only process if context grew OR we received LLMRunFrame
-                        if context_grown or self._last_llm_run_frame:
+                    # Create a hash of the last message content to track if we've processed it
+                    last_content_hash = hashlib.md5(f"{last_role}:{last_content}".encode()).hexdigest()
+                    already_processed = last_content_hash in self._processed_message_hashes
+                    
+                    # Process if:
+                    # 1. Last message is from user AND has content
+                    # 2. We haven't processed this exact message before
+                    # 3. Either context grew (new message) OR we received LLMRunFrame (new transcription)
+                    if last_role == 'user' and last_content:
+                        if not already_processed and (context_grown or self._last_llm_run_frame):
                             logger.info(f"🤖 [GROQ LLM] ✨ Processing user message: '{last_content[:80]}...'")
                             await self._process_messages(messages, direction)
-                            self._last_processed_content = last_content
+                            self._processed_message_hashes.add(last_content_hash)
                             self._last_context_message_count = len(messages)
-                            self._last_llm_run_frame = None  # Clear the flag
+                            self._last_llm_run_frame = None  # Clear the flag after processing
+                        elif already_processed:
+                            logger.debug(f"🤖 [GROQ LLM] Skipping: already_processed=True, content='{last_content[:50]}...'")
                         else:
                             logger.debug(f"🤖 [GROQ LLM] Waiting for context growth or LLMRunFrame (context_grown={context_grown}, has_llm_run={self._last_llm_run_frame is not None})")
-                    else:
-                        logger.debug(f"🤖 [GROQ LLM] Skipping: role={last_role}, already_processed={last_content == self._last_processed_content}")
+                    elif last_role != 'user':
+                        logger.debug(f"🤖 [GROQ LLM] Skipping: last message is not from user (role={last_role})")
+                    elif not last_content:
+                        logger.debug(f"🤖 [GROQ LLM] Skipping: last message has no content")
                 elif not messages:
                     logger.warning(f"🤖 [GROQ LLM] ⚠️ Could not extract messages from LLMContextFrame")
                     # Fallback: If we have a pending transcription, use it directly
